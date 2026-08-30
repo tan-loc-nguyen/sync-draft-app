@@ -1,7 +1,6 @@
 import {Button} from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-// , MergeIcon, ClockIcon 
-import { EditingIcon, GroupIcon } from '@/assets/icons'
+import { ClockIcon, EditingIcon, GroupIcon, MergeIcon } from '@/assets/icons'
 import Logo from "@/components/Logo"
 import useAuth from "@/hook/useAuth";
 
@@ -74,7 +73,7 @@ export default function OnBoarding() {
               </CardDescription>
             </CardContent>
           </Card>
-          {/* <Card>
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <MergeIcon />
@@ -99,7 +98,7 @@ export default function OnBoarding() {
                 Work on your own time and sync changes when you're ready.
               </CardDescription>
             </CardContent>
-          </Card> */}
+          </Card>
         </section>
 
         <section className="text-center">
@@ -112,7 +111,7 @@ export default function OnBoarding() {
 
       <footer className="bg-muted py-6">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          © 2024 Sync Draft. All rights reserved.
+          © 2026 Sync Draft. All rights reserved.
         </div>
       </footer>
     </div>

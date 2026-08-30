@@ -1,11 +1,17 @@
 import { createBrowserRouter } from "react-router-dom";
+import { withAuthenticationRequired } from "@auth0/auth0-react";
 
 import Home from '@/screens/Home';
-import Document from '@/screens/Document';
+import DocumentScreen from '@/screens/Document';
 import Error from '@/screens/Error';
 import OnBoarding from "@/screens/OnBoarding";
 import Draft from '@/screens/Draft';
-import { RequiredAuth } from '@/components/hoc/protected-route';
+
+// Wrapped once at module scope. Building these inside a render would create a
+// new component type on every pass, remounting the screen and losing its state.
+const ProtectedHome = withAuthenticationRequired(Home);
+const ProtectedDocument = withAuthenticationRequired(DocumentScreen);
+const ProtectedDraft = withAuthenticationRequired(Draft);
 
 const router = createBrowserRouter([
   {
@@ -14,16 +20,16 @@ const router = createBrowserRouter([
   },
   {
     path: '/document',
-    element: <RequiredAuth children={Home}/>,
+    element: <ProtectedHome/>,
   },
   {
     path: '/document/:docId',
-    element: <RequiredAuth children={Document}/>,
+    element: <ProtectedDocument/>,
     errorElement: <Error/>,
   },
   {
     path: '/draft/:docId/:draftId',
-    element: <RequiredAuth children={Draft}/>,
+    element: <ProtectedDraft/>,
     errorElement: <Error/>
   }
 ]);

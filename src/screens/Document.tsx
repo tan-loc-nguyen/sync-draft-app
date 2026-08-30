@@ -1,337 +1,265 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import Modal from 'react-modal';
 import Select from 'react-select';
-import { io, Socket } from 'socket.io-client';
-// import { v4 as uuidv4 } from 'uuid';
-import * as automerge from '@automerge/automerge';
+import { v4 as uuidv4 } from 'uuid';
+import * as A from '@automerge/automerge';
 import axios from 'axios';
-// BranchIcon, DocumentIcon, MergeIcon, ShareIcon
-import { CloseIcon, CompareIcon, HomeIcon, LeftArrowIcon } from '@/assets/icons';
+
+import {
+  BranchIcon,
+  CloseIcon,
+  CompareIcon,
+  DocumentIcon,
+  HomeIcon,
+  LeftArrowIcon,
+  MergeIcon,
+  ShareIcon,
+} from '@/assets/icons';
 import TitleInput from '@/components/TitleInput';
 import Editor from '@/components/Editor';
 import { UserBubble } from '@/components/UserBubble';
-// import DraftItem from '@/components/DraftItem';
+import DraftItem from '@/components/DraftItem';
+import MergeItem from '@/components/MergeItem';
 import Merge from '@/components/Merge';
 import { Button } from '@/components/ui/button';
-import { Document as DocumentType } from '@/types/document';
 import useDocument from '@/hook/useDocument';
 import useAuth from '@/hook/useAuth';
+import useDocumentSync from '@/hook/useDocumentSync';
 import { IDraft, useLocalDB } from '@/hook/useLocalDB';
-import {Merge as TypeMerge} from '@/types/merge';
-// import { toTime } from '@/lib/utils';
-// import MergeItem from '@/components/MergeItem';
-
-Modal.setAppElement('#root');
+import { SyncDoc } from '@/lib/automerge-doc';
+import { Merge as TypeMerge } from '@/types/merge';
+import { getErrorMessage } from '@/lib/errors';
+import { useToast } from '@/components/Toast';
 
 const Document = () => {
-  const socketUri = import.meta.env.VITE_SOCKET_ENDPOINT || 'ws://sync-draft-server.onrender.com';
-  const apiUri = import.meta.env.VITE_API_ENDPOINT || 'https://sync-draft-server.onrender.com/api';
+  const apiUri = import.meta.env.VITE_API_ENDPOINT || 'http://localhost:3030/api';
 
   const { docId } = useParams();
   const navigate = useNavigate();
-  const { updateDocTitle, getDocumentById, loading } = useDocument();
+  const { updateDocTitle, getDocumentById } = useDocument();
   const { user, getToken } = useAuth();
-  const { openIndexedDB, getDraftsByDocId, getDraftById } = useLocalDB() // createDraft
+  const userId = user?.sub;
+  const { openIndexedDB, createDraft, getDraftById, getDraftsByDocId, markDraftMerged } = useLocalDB();
 
-  const [socket, setSocket] = useState<Socket | null>();
+  // Live document state comes from the CRDT sync hook, not from local state.
+  const {
+    content,
+    onlineUsers,
+    connected,
+    syncError,
+    publish,
+    snapshot,
+    currentContent,
+    mergeBranch,
+  } = useDocumentSync(docId);
+
+  const { notify, toastElement } = useToast();
+
   const [docTitle, setDocTitle] = useState<string>('Untitled');
-  const [content, setContent] = useState<string | null>();
-  // const [debouncedContent, setDebouncedContent] = useState<string | null>();
-  const [mergeIsOpen, setMergeIsOpen] = useState<boolean>(false);
+  const [drafts, setDrafts] = useState<IDraft[]>([]);
+  const [merges, setMerges] = useState<TypeMerge[]>([]);
   const [selection, setSelection] = useState<{ value: string; label: string } | null>(null);
-  const [onlineUsers, setOnlineUsers] = useState<string[] | null>();
-  const [drafts, setDrafts] = useState<IDraft[]>()
-  const [mergeOptions, setMergeOptions] = useState<{value: string, label: string}[]>();
-  const [mergeDraft, setMergeDraft] = useState<string | null>()
-  const [merges, setMerges] = useState<TypeMerge[]>();
+  const [mergePreview, setMergePreview] = useState<string>('');
+  // Captured when the merge dialog opens so the comparison is stable while open.
+  const [mergeBase, setMergeBase] = useState<string>('');
+  const [mergeIsOpen, setMergeIsOpen] = useState<boolean>(false);
   const [mergeViewIsOpen, setMergeViewIsOpen] = useState<boolean>(false);
-  const [selectedMerge, setSelectedMerge] = useState<TypeMerge>();
+  const [selectedMerge, setSelectedMerge] = useState<TypeMerge | null>(null);
 
-  console.log(drafts, merges, setSelectedMerge)
+  const refreshDrafts = useCallback(async () => {
+    if (!userId || !docId) return;
+
+    const db = await openIndexedDB(userId);
+    if (!db) return;
+
+    setDrafts(await getDraftsByDocId(db, docId));
+  }, [userId, docId]);
+
+  const refreshMerges = useCallback(async () => {
+    if (!docId) return;
+
+    try {
+      const token = await getToken();
+      const response = await axios.get<TypeMerge[]>(`${apiUri}/merges/${docId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setMerges(response.data);
+    } catch (error) {
+      console.error(`Error occurs while fetching merges: ${getErrorMessage(error)}`);
+    }
+  }, [docId, apiUri, getToken]);
 
   useEffect(() => {
     const fetchDoc = async () => {
-      if (!docId) {
-        return;
-      }
-      const doc: DocumentType = await getDocumentById(docId);
-      
+      if (!docId) return;
+
+      const doc = await getDocumentById(docId);
+
       if (doc) {
         setDocTitle(doc.title);
-        setContent(doc.content);
       } else {
-        alert('Document has been deleted by the owner.')
-        navigate('/document')
+        notify('This document has been deleted by its owner.', 'error');
+        navigate('/document');
       }
-    }
+    };
 
     fetchDoc();
-  }, [docId])
+    // getDocumentById is recreated per render; docId is the real input here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docId]);
+
+  /* eslint-disable react-hooks/set-state-in-effect -- both loaders set state
+     only after awaiting IO, which is ordinary async data loading rather than
+     the synchronous cascade this rule guards against. */
+  useEffect(() => {
+    refreshDrafts();
+  }, [refreshDrafts]);
 
   useEffect(() => {
-    const fetchDraft = async () => {
-      if (!user?.sub) {
-        alert('Failed to update draft title! Please try again later...');
-        return;
-      }
-  
-      const db = await openIndexedDB(user.sub);
-      if (!db || !docId) {
-        alert('Failed to update draft title! Please try again later...');
-        return;
-      }
-      const draftList = await getDraftsByDocId(db, docId);
-      setDrafts(draftList);
-      if (draftList)
-        setMergeOptions(draftList?.map(draft => ({value: draft.draftId, label: draft.title})))
-    }
+    refreshMerges();
+  }, [refreshMerges]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-    fetchDraft();
-  }, [])
-
+  // Build the preview by merging the chosen draft into a copy of this document.
   useEffect(() => {
-    const fetchMerge = async () => {
-      try {
-        const token = await getToken();
-        const response = await axios.get<TypeMerge[]>(
-          `${apiUri}/merges/${docId}`,
-          {
-            headers: { 'Authorization': `Bearer ${token}` }
-          }
-        )
-
-        setMerges(response.data);
-      } catch (error: any) {
-        console.error(`Error occurs while posting merge: ${error}`);
-      }
-    }
-
-    fetchMerge();
-  }, [])
-
-  // TODO: Fix state handling since it's still mixed up
-  useEffect(() => {
-    const getAfterMerge = async () => {
-      if (!user?.sub) {
-        alert('Failed to update draft title! Please try again later...');
+    const buildPreview = async () => {
+      if (!selection?.value || !userId) {
+        setMergePreview('');
         return;
       }
-  
-      const db = await openIndexedDB(user.sub);
-  
-      if (!db || !selection?.value) {
 
-        return;
-      }
-  
+      const db = await openIndexedDB(userId);
+      if (!db) return;
+
       const draft = await getDraftById(db, selection.value);
-      const draftContent = automerge.from({ content: draft?.content });
-      const mainContent = automerge.from({ content: content });
-  
-      let afterMergeContent = automerge.merge(draftContent, mainContent);
-      console.log(afterMergeContent.content)
-      setMergeDraft(afterMergeContent.content);
-    }
+      if (!draft) return;
 
-    getAfterMerge();
-  }, [selection, mergeDraft])
+      const merged = A.merge(snapshot(), A.load<SyncDoc>(draft.doc));
+      setMergePreview(merged.content ?? '');
+    };
 
-  // -----------------------------------------Event listeners--------------------------------------------------
-  useEffect(() => {
-    if (!user?.sub || loading) {
-      console.log('Loading...');
-      return;
-    }
-
-    const socketInstance = io(socketUri, {
-      transports: ['websocket']
-    });
-    setSocket(socketInstance);
-
-    socketInstance.on('connect', () => {
-      console.log(`${socketInstance.id} connected, joining room ${docId}`);
-      socketInstance.emit('join-doc', { docId: docId, userId: user.sub })
-    })
-
-    socketInstance.on('online-users', (users: string[]) => {
-      setOnlineUsers(users);
-      console.log(`Online users: ${users}`);
-    })
-
-    socketInstance.on('doc-change', (change: string) => {
-      setContent(change);
-    })
-    return () => {
-      socketInstance.off('online-users');
-      socketInstance.off('doc-change');
-      socketInstance.off('connect');
-    }
-  }, [docId, user?.sub])
-
-  // -----------------------------------------Event emmiters--------------------------------------------------
-  // useEffect(() => {
-  //   const timeOut = setTimeout(() => {
-  //     setDebouncedContent(content);
-  //   }, 10);
-
-  //   return () => {
-  //     clearTimeout(timeOut);
-  //   }
-  // }, [content]);
-  
-  useEffect(() => {
-    if (!socket || !content) return;
-
-    socket.emit('edit-doc', { docId: docId, content: content});
-  }, [content, socket]);
-
-  // const leaveDoc = () => {
-  //   if (!socket || !user?.sub) return;
-
-  //   socket.emit('leave-doc',  {docId: docId, userId: user.sub});
-  // }
-  // ---------------------------------------------------------------------------------------------------------
-
-  // const openMergeModal = () => {
-  //   setMergeIsOpen(true);
-  // }
-
-  // const openMergeView = () => {
-  //   setMergeViewIsOpen(true);
-  // }
-
-  const closeMergeModal = () => {
-    setMergeIsOpen(false);
-  }
-
-  const closeMergeView = () => {
-    setMergeViewIsOpen(false);
-  }
-
-  const handleChange = (newValue: { value: string; label: string } | null) => {
-    setSelection(newValue);
-  };
-
-  const handleEditorChange = (value: string) => {
-    console.log(value)
-    setContent(value);
-  };
+    buildPreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection, userId]);
 
   const handleTitleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setDocTitle(event.target.value);
-  }
+  };
 
   const changeTitle = (event: React.FocusEvent<HTMLInputElement, Element>) => {
     event.preventDefault();
-    if (!docId) {
+    if (!docId) return;
+    updateDocTitle(docId, docTitle);
+  };
+
+  const handleShare = async () => {
+    if (!docId) return;
+    await navigator.clipboard.writeText(`${window.location.origin}/document/${docId}`);
+    notify('Copied link to this document');
+  };
+
+  const handleCreateDraft = async () => {
+    if (!userId || !docId) {
+      notify('Could not create a draft. Please try again.', 'error');
       return;
     }
-    updateDocTitle(docId, docTitle);
-  }
+
+    const db = await openIndexedDB(userId);
+    if (!db) {
+      notify('Could not create a draft. Please try again.', 'error');
+      return;
+    }
+
+    const newDraftId = uuidv4();
+
+    try {
+      // Forking from the live replica is what gives the draft a shared ancestor
+      // with main, so merging it back later is a real merge.
+      await createDraft(db, docId, newDraftId, snapshot());
+      navigate(`/draft/${docId}/${newDraftId}`);
+    } catch (error) {
+      console.error(error);
+      notify('Could not create a draft. Please try again.', 'error');
+    }
+  };
 
   const handleConfirmMerge = async () => {
-    alert('Merge succesfully');
-    if (!socket) return;
+    if (!selection?.value || !userId || !docId) return;
 
-    socket.emit('edit-doc', { docId: docId, content: mergeDraft});
+    const db = await openIndexedDB(userId);
+    if (!db) return;
+
+    const draft = await getDraftById(db, selection.value);
+    if (!draft) return;
+
+    const before = currentContent();
+    mergeBranch(A.load<SyncDoc>(draft.doc));
 
     try {
       const token = await getToken();
       await axios.post<TypeMerge>(
         `${apiUri}/merges/${docId}`,
-        {
-          before: content,
-          after: mergeDraft,
-          description: null
-        },
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      )
-    } catch (error: any) {
-      console.error(`Error occurs while posting merge: ${error}`);
+        { before, after: mergePreview, description: `Merged "${draft.title}"` },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      await markDraftMerged(db, draft.draftId);
+    } catch (error) {
+      console.error(`Error occurs while posting merge: ${getErrorMessage(error)}`);
     }
 
-    setContent(mergeDraft);
-    closeMergeModal();
-  }
+    setMergeIsOpen(false);
+    setSelection(null);
+    await Promise.all([refreshDrafts(), refreshMerges()]);
+  };
 
-  // const handleReturnToMain = () => {
-  //   navigate(`/document/${docId}`);
-  //   window.location.reload();
-  // }
+  const openMergeView = (merge: TypeMerge) => {
+    setSelectedMerge(merge);
+    setMergeViewIsOpen(true);
+  };
 
-  // const handleShare = () => {
-  //   if (!docId) {
-  //     alert('Failed to share link! Please try again later...');
-  //     return;
-  //   }
-  //   navigator.clipboard.writeText(`http://localhost:5173/document/${docId}`);
-  //   alert('Copied link to this document!');
-  // }
-
-  // const handleCreateDraft = async () => {
-  //   const newDraftId = uuidv4();
-  //   if (!user?.sub) {
-  //     alert('Failed to create new draft! Please try again later...');
-  //     return;
-  //   }
-  //   const db = await openIndexedDB(user.sub);
-
-  //   if (!db || !docId) {
-  //     alert('Failed to create new draft! Please try again later...');
-  //     return;
-  //   }
-
-  //   await createDraft(db, docId, newDraftId, content || '');
-  //   navigate(`/draft/${docId}/${newDraftId}`);
-  //   window.location.reload();
-  // }
+  const mergeOptions = drafts
+    .filter((draft) => !draft.isMerged)
+    .map((draft) => ({ value: draft.draftId, label: draft.title }));
 
   return (
     <div className='container h-screen flex flex-row'>
-      <Merge isOpen={mergeViewIsOpen} onRequestClose={closeMergeView}>
+      {toastElement}
+      {/* Past merge, shown read-only */}
+      <Merge isOpen={mergeViewIsOpen} onRequestClose={() => setMergeViewIsOpen(false)}>
         <div className='w-full h-full flex flex-col'>
-          {/*Compare differences tittle*/}
           <div className='grow-0 w-full h-fit flex flex-row justify-between items-center'>
-            <h1 className='text-[20px] font-semibold'>Compare differences</h1>
-            <Button variant="ghost" size="icon" onClick={closeMergeView}>
-              <CloseIcon/>
+            <h1 className='text-[20px] font-semibold'>Merge details</h1>
+            <Button variant='ghost' size='icon' onClick={() => setMergeViewIsOpen(false)}>
+              <CloseIcon />
             </Button>
           </div>
-          <p className='grow-0 text-gray-500'>
-            Review the differences between your draft and the main version before merging.
-          </p>
-
-          {/*Comparing 2-board*/}
-            <div className='grow w-full my-4 flex flex-row justify-between items-center'>
-              {/*Current main version */}
-              <div className='w-[47.5%] p-4 h-full border rounded-lg'>
-                <Editor content={selectedMerge?.before} editable={false}/>
-              </div>
-              {/*After merge version */}
-              <div className='w-[47.5%] p-4 h-full border rounded-lg'>
-                <Editor content={selectedMerge?.after} editable={false}/>
-              </div>
+          <p className='grow-0 text-gray-500'>{selectedMerge?.description}</p>
+          <div className='grow w-full my-4 flex flex-row justify-between items-stretch overflow-hidden'>
+            <div className='w-[47.5%] p-4 border rounded-lg overflow-auto'>
+              <p className='text-xs uppercase text-gray-400 mb-2'>Before</p>
+              <Editor content={selectedMerge?.before ?? ''} editable={false} />
             </div>
+            <div className='w-[47.5%] p-4 border rounded-lg overflow-auto'>
+              <p className='text-xs uppercase text-gray-400 mb-2'>After</p>
+              <Editor content={selectedMerge?.after ?? ''} editable={false} />
+            </div>
+          </div>
         </div>
       </Merge>
 
-      <Merge isOpen={mergeIsOpen} onRequestClose={closeMergeModal}>
+      {/* Merge a draft into main */}
+      <Merge isOpen={mergeIsOpen} onRequestClose={() => setMergeIsOpen(false)}>
         <div className='w-full h-full flex flex-col'>
-          {/*Compare differences tittle*/}
           <div className='grow-0 w-full h-fit flex flex-row justify-between items-center'>
             <h1 className='text-[20px] font-semibold'>Compare differences</h1>
-            <Button variant="ghost" size="icon" onClick={closeMergeModal}>
-              <CloseIcon/>
+            <Button variant='ghost' size='icon' onClick={() => setMergeIsOpen(false)}>
+              <CloseIcon />
             </Button>
           </div>
           <p className='grow-0 text-gray-500'>
             Review the differences between your draft and the main version before merging.
           </p>
 
-          {/*Compare bar */}
           <div className='grow-0 relative w-full h-[48px] mt-4 py-2 px-4 bg-gray-100 rounded-lg flex flex-row justify-start items-center'>
             <CompareIcon />
             <div className='w-fit h-[36px] mx-4 px-4 bg-white rounded font-normal border flex flex-row justify-center items-center'>
@@ -339,114 +267,116 @@ const Document = () => {
             </div>
             <LeftArrowIcon />
             <Select
-              className='ml-4'
+              className='ml-4 min-w-[240px]'
               placeholder='Select draft to merge'
-              defaultValue={selection}
-              onChange={handleChange}
+              value={selection}
+              onChange={setSelection}
               options={mergeOptions}
             />
           </div>
 
-          {/*Comparing 2-board*/}
-            <div className='grow w-full my-4 flex flex-row justify-between items-center'>
-              {/*Current main version */}
-              <div className='w-[47.5%] p-4 h-full border rounded-lg'>
-                <Editor content={content} editable={false}/>
-              </div>
-              {/*After merge version */}
-              <div className='w-[47.5%] p-4 h-full border rounded-lg'>
-                <Editor content={mergeDraft} editable={false}/>
-              </div>
+          <div className='grow w-full my-4 flex flex-row justify-between items-stretch overflow-hidden'>
+            <div className='w-[47.5%] p-4 border rounded-lg overflow-auto'>
+              <p className='text-xs uppercase text-gray-400 mb-2'>Current main</p>
+              <Editor content={mergeBase} editable={false} />
             </div>
-          {/*Confirm + Cancel buttons */}
+            <div className='w-[47.5%] p-4 border rounded-lg overflow-auto'>
+              <p className='text-xs uppercase text-gray-400 mb-2'>After merge</p>
+              <Editor content={mergePreview} editable={false} />
+            </div>
+          </div>
+
           <div className='grow-0 w-full h-fit flex flex-row-reverse justify-start items-center'>
-            <Button className='ml-4' onClick={handleConfirmMerge}>
+            <Button className='ml-4' onClick={handleConfirmMerge} disabled={!selection}>
               Confirm
             </Button>
-            <Button variant="outline" onClick={closeMergeModal}>
+            <Button variant='outline' onClick={() => setMergeIsOpen(false)}>
               Cancel
             </Button>
           </div>
         </div>
       </Merge>
 
-      {/*Right section*/}
-      <div className='w-full h-full p-4 flex flex-col justify-start'>
+      {/* Editor side */}
+      <div className='w-4/5 h-full p-4 flex flex-col justify-start'>
         <div className='w-full h-[60px] flex flex-row justify-between items-center'>
-          {/*Home + Title*/}
           <div className='w-4/5 h-[48px] flex flex-row justify-start items-center'>
             <a href='/document'>
-              <Button variant="ghost" size="lg">
-                <HomeIcon/>
+              <Button variant='ghost' size='lg'>
+                <HomeIcon />
                 Home
               </Button>
             </a>
-            <TitleInput value={docTitle} onChange={handleTitleChange} onBlur={changeTitle}/>
+            <TitleInput value={docTitle} onChange={handleTitleChange} onBlur={changeTitle} />
           </div>
-          {/*Collaborators*/}
           <div className='w-1/5 h-[60px] flex flex-row-reverse justify-start items-center overflow-auto'>
-            {onlineUsers && onlineUsers.map(user => <UserBubble userId={user}/>)}
+            {onlineUsers.map((collaborator) => (
+              <UserBubble key={collaborator} userId={collaborator} />
+            ))}
           </div>
         </div>
 
-        {/*Editor*/}
-        <Editor onChange={handleEditorChange} content={content}/>
+        {syncError && (
+          <p className='text-sm text-red-600' role='alert'>
+            {syncError}
+          </p>
+        )}
+        {!connected && !syncError && <p className='text-sm text-gray-500'>Connecting…</p>}
+
+        <Editor onChange={publish} content={content} />
       </div>
-      {/* <aside/> */}
-        {/*Left sidebar section*/}
-      {/* <div className='w-1/5 h-full p-4 bg-gray-100 flex flex-col justify-start'>
-        <div className='grow-0 w-full h-[168px] flex flex-col justify-between items-center'>
-          <Button className='w-full' variant="outline" size="lg" onClick={handleReturnToMain}>
-              <DocumentIcon />
-              Return to Main
-          </Button>
-          <Button className='w-full' variant="outline" size="lg" onClick={handleShare}>
+
+      {/* Branching sidebar */}
+      <div className='w-1/5 h-full p-4 bg-gray-100 flex flex-col justify-start'>
+        <div className='grow-0 w-full flex flex-col gap-2 items-center'>
+          <Button className='w-full' variant='outline' size='lg' onClick={handleShare}>
             <ShareIcon />
             Share document
           </Button>
-          <Button className='w-full' variant="outline" size="lg" onClick={handleCreateDraft}>
+          <Button className='w-full' variant='outline' size='lg' onClick={handleCreateDraft}>
             <BranchIcon />
-            Create new Draft
+            Create new draft
           </Button>
-          <Button className='w-full' variant="outline" size="lg" onClick={openMergeModal}>
+          <Button
+            className='w-full'
+            variant='outline'
+            size='lg'
+            onClick={() => { setMergeBase(currentContent()); setMergeIsOpen(true); }}
+            disabled={mergeOptions.length === 0}
+          >
             <MergeIcon />
-            Merge Draft
+            Merge draft
           </Button>
         </div>
 
-        <div className='grow-0 w-full h-[28px] mt-4 text-[20px] font-semibold'>Draft version</div>
+        <div className='grow-0 w-full h-[28px] mt-4 text-[20px] font-semibold'>Drafts</div>
         <div className='grow w-full mt-2 rounded-lg flex flex-col justify-start items-start overflow-auto'>
-          {drafts && drafts.map(draft => (
+          {drafts.length === 0 && <p className='text-sm text-gray-500'>No drafts yet.</p>}
+          {drafts.map((draft) => (
             <DraftItem
+              key={draft.draftId}
               docId={docId as string}
               draftId={draft.draftId}
               title={draft.title || 'Untitled'}
-              isMerged={false}
-              createdAt={toTime(draft.createdAt.toString())}
-              content={draft.content}
-            />)
-          )}
+              isMerged={draft.isMerged}
+              createdAt={draft.createdAt}
+            />
+          ))}
         </div>
 
-        <div className='grow-0 w-full h-[28px] mt-4 text-[20px] font-semibold'>Recent merges</div>
-        <div className='grow w-full mt-2 rounded-lg flex flex-col justify-start items-start overflow-auto'>
-          {merges && merges.map(merge => (
-            <MergeItem 
-              _id={merge._id}
-              docId={docId as string}
-              mergedBy={merge.mergedBy}
-              before={merge.before}
-              after={merge.after}
-              mergedAt={merge.mergedAt}
-              description={merge.description}
-              setState={setSelectedMerge}
-              openModal={openMergeView}
-            />)
-          )}
+        <div className='grow-0 w-full h-[28px] mt-4 text-[20px] font-semibold flex items-center gap-2'>
+          <DocumentIcon />
+          Recent merges
         </div>
-      </div> */}
+        <div className='grow w-full mt-2 rounded-lg flex flex-col justify-start items-start overflow-auto'>
+          {merges.length === 0 && <p className='text-sm text-gray-500'>No merges yet.</p>}
+          {merges.map((merge) => (
+            <MergeItem key={merge.id} merge={merge} onSelect={openMergeView} />
+          ))}
+        </div>
+      </div>
     </div>
-  )
+  );
 };
 
 export default Document;

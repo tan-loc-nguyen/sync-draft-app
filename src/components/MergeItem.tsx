@@ -1,46 +1,24 @@
-import { Merge } from '@/types/merge'
 import React from 'react'
 
-interface MergeItemProps extends Merge {
-  setState: React.Dispatch<React.SetStateAction<Merge | undefined>>
-  openModal: () => void
+import { Merge } from '@/types/merge'
+
+interface MergeItemProps {
+  merge: Merge
+  onSelect: (merge: Merge) => void
 }
 
-const MergeItem: React.FC<MergeItemProps> = ({
-  _id,
-  docId,
-  mergedBy,
-  before,
-  after,
-  mergedAt,
-  description,
-  setState,
-  openModal
-}) => {
-  const handleSelectMergeView = () => {
-    const merge: Merge = {
-      _id,
-      docId,
-      mergedBy,
-      after,
-      before,
-      description,
-      mergedAt
-    }
-    setState(merge)
-    openModal();
-  }
-
+const MergeItem: React.FC<MergeItemProps> = ({ merge, onSelect }) => {
   return (
-    <div
-      className='w-full h-[60px] mb-2 p-2 bg-white rounded-lg hover:bg-gray-200 flex flex-col justify-between items-start cursor-pointer'
-      onClick={handleSelectMergeView}
+    <button
+      type='button'
+      className='w-full mb-2 p-2 bg-white rounded-lg hover:bg-gray-200 flex flex-col justify-between items-start cursor-pointer text-left'
+      onClick={() => onSelect(merge)}
     >
-      <p>{description || 'Untitle'}</p>
+      <p className='truncate w-full'>{merge.description || 'Merged a draft'}</p>
       <p className='text-gray-500 font-normal text-[13px]'>
-        {`Merged by: ${mergedBy}`}
+        {`Merged by ${merge.mergedById}`}
       </p>
-    </div>
+    </button>
   )
 }
 

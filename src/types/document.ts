@@ -1,9 +1,8 @@
 export interface Document {
-  _id?: string,
+  id: string,
   ownerId: string,
   title: string,
-  content: string,
+  content: string | null,
   createdAt: Date,
-  updatedAt: Date,
-  merges: string[]
+  updatedAt: Date
 }

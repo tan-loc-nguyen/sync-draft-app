@@ -2,14 +2,15 @@ import { User } from '@/types/user';
 import axios from 'axios';
 import { useState } from 'react'
 import useAuth from './useAuth';
+import { getErrorMessage, getErrorStatus } from '@/lib/errors';
 
 const useProfile = () => {
   const apiUri = import.meta.env.VITE_API_ENDPOINT;
   const { getToken, user } = useAuth();
 
   const [loading, setLoading] = useState<boolean>(false);
-  const [profile, setProfile] = useState<any>(null);
-  const [profileErr, setProfileErr] = useState<any>(null);
+  const [profile, setProfile] = useState<User | null>(null);
+  const [profileErr, setProfileErr] = useState<string | null>(null);
   const [noProfile, setNoProfile] = useState<boolean>(false);
 
   const getUserProfile = async () => {
@@ -28,13 +29,13 @@ const useProfile = () => {
       console.log(`Current profile: ${response.data}`);
       setProfile(response.data);
       return response.data;
-    } catch (error: any) {
-      if (error.response.status === 404) {
+    } catch (error) {
+      if (getErrorStatus(error) === 404) {
         setNoProfile(true);
         return;
       }
-      console.error(`Error occurs while getting profile: ${error}`);
-      setProfileErr(error);
+      console.error(`Error occurs while getting profile: ${getErrorMessage(error)}`);
+      setProfileErr(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -61,12 +62,12 @@ const useProfile = () => {
       console.log(`Created profile: ${response.data}`);
       setProfile(response.data);
       return response.data;
-    } catch (error: any) {
-      if (error.response.status === 404) {
+    } catch (error) {
+      if (getErrorStatus(error) === 404) {
         setNoProfile(true);
       }
-      console.error(`Error occurs while creating profile: ${error}`);
-      setProfileErr(error);
+      console.error(`Error occurs while creating profile: ${getErrorMessage(error)}`);
+      setProfileErr(getErrorMessage(error));
     } finally {
       setLoading(false);
     }

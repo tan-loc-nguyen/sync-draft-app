@@ -1,50 +1,52 @@
-# React + TypeScript + Vite
+# Sync Draft — web client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React client for Sync Draft: collaborative document editing with a git-like
+draft-and-merge workflow, built on Automerge CRDTs.
 
-Currently, two official plugins are available:
+Pairs with [`sync-draft-server`](../sync-draft-server).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Stack
 
-## Expanding the ESLint configuration
+React 19 · Vite 8 · TypeScript · Tailwind 4 · shadcn/Radix · TipTap (ProseMirror)
+· Automerge 3 · Socket.IO · Auth0 · IndexedDB (`idb`)
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+## The two modes
 
-- Configure the top-level `parserOptions` property like this:
+**Main document** — `useDocumentSync` holds this browser's Automerge replica and
+runs the sync protocol with the server. Everyone editing the document converges;
+concurrent edits merge instead of overwriting.
 
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+**Drafts** — a draft is a *fork* of the document, stored in IndexedDB and private
+to your browser until you merge it. Because it keeps the history it was forked
+from, merging it back is a real Automerge merge against a shared ancestor, not
+one version replacing another.
+
+The compare view shows main beside the merge result before you commit to it, and
+merged drafts are recorded in the document's merge history.
+
+## Getting started
+
+```bash
+yarn install
+cp .env.example .env    # then fill in the Auth0 values
+yarn dev
 ```
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
+Start the server first — the client needs it for the API and the socket.
 
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react'
+## Scripts
 
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-})
-```
+| Command | Purpose |
+|---|---|
+| `yarn dev` | Vite dev server on :5173 |
+| `yarn build` | Type-check and build for production |
+| `yarn preview` | Serve the production build |
+| `yarn test` | Vitest (jsdom + fake-indexeddb) |
+| `yarn lint` | ESLint |
+
+## Notes
+
+- The document body is currently modelled as one Automerge text field holding
+  HTML. That merges cleanly when people work in different regions. Moving to
+  `@automerge/prosemirror` would make rich-text merging structurally correct;
+  it was left out while that package is still at 0.x.

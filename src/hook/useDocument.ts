@@ -2,15 +2,16 @@ import { useState } from 'react'
 import useAuth from './useAuth';
 import axios from 'axios';
 import { Document } from '@/types/document';
+import { getErrorMessage } from '@/lib/errors';
 
 const useDocument = () => {
   const baseUri = import.meta.env.VITE_API_ENDPOINT;
   const { getToken } = useAuth();
 
   const [loading, setLoading] = useState<boolean>(false);
-  const [documentErr, setDocumentErr] = useState<any>(null);
+  const [documentErr, setDocumentErr] = useState<string | null>(null);
 
-  const getDocuments = async (whose: string): Promise<Document[] | any> => {
+  const getDocuments = async (whose: string): Promise<Document[] | undefined> => {
     setLoading(true);
     setDocumentErr(null);
 
@@ -26,14 +27,14 @@ const useDocument = () => {
 
       return response.data;
     } catch (error) {
-      console.error(`Error occurs while getting documents: ${error}`);
-      setDocumentErr(error);
+      console.error(`Error occurs while getting documents: ${getErrorMessage(error)}`);
+      setDocumentErr(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
   }
 
-  const getDocumentById = async (docId: string): Promise<Document | any> => {
+  const getDocumentById = async (docId: string): Promise<Document | undefined> => {
     setLoading(true);
     setDocumentErr(null);
 
@@ -49,8 +50,8 @@ const useDocument = () => {
 
       return response.data;
     } catch (error) {
-      console.error(`Error occurs while getting document: ${error}`);
-      setDocumentErr(error);
+      console.error(`Error occurs while getting document: ${getErrorMessage(error)}`);
+      setDocumentErr(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -71,11 +72,11 @@ const useDocument = () => {
         }
       )
       
-      console.log(`Created document: ${response.data._id}`);
+      console.log(`Created document: ${response.data.id}`);
       return response.data;
-    } catch (error: any) {
-      console.error(`Error occurs while creating document: ${error}`);
-      setDocumentErr(error);
+    } catch (error) {
+      console.error(`Error occurs while creating document: ${getErrorMessage(error)}`);
+      setDocumentErr(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -98,11 +99,11 @@ const useDocument = () => {
         }
       )
       
-      console.log(`Updated document: ${response.data._id}`);
+      console.log(`Updated document: ${response.data.id}`);
       return response.data;
-    } catch (error: any) {
-      console.error(`Error occurs while update doc title: ${error}`);
-      setDocumentErr(error);
+    } catch (error) {
+      console.error(`Error occurs while update doc title: ${getErrorMessage(error)}`);
+      setDocumentErr(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -121,10 +122,10 @@ const useDocument = () => {
           headers: { 'Authorization': `Bearer ${token}` }
         }
       )
-      console.log(`Deleted document: ${response.data._id}`);
-    } catch (error: any) {
-      console.error(`Error occurs while update doc title: ${error}`);
-      setDocumentErr(error);
+      console.log(`Deleted document: ${response.data.id}`);
+    } catch (error) {
+      console.error(`Error occurs while update doc title: ${getErrorMessage(error)}`);
+      setDocumentErr(getErrorMessage(error));
     } finally {
       setLoading(false);
     }

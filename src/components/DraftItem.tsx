@@ -1,22 +1,28 @@
 import React from 'react';
-import { IDraft } from '@/hook/useLocalDB';
 
-const DraftItem: React.FC<IDraft> = ({
+export interface DraftItemProps {
+  docId: string,
+  draftId: string,
+  title: string,
+  isMerged: boolean,
+  createdAt: string
+}
+
+const DraftItem: React.FC<DraftItemProps> = ({
   docId,
   draftId,
   title,
   isMerged,
-  createdAt,
-  // content
+  createdAt
 }) => {
   return (
-    <a 
+    <a
       href={`/draft/${docId}/${draftId}`}
-      className='w-full h-[60px] mb-2 p-2 bg-white rounded-lg hover:bg-gray-200 flex flex-col justify-between items-start'
+      className='w-full mb-2 p-2 bg-white rounded-lg hover:bg-gray-200 flex flex-col justify-between items-start'
     >
-      <p>{title}</p>
+      <p className='truncate w-full'>{title}</p>
       <p className='text-gray-500 font-normal text-[13px]'>
-        {!isMerged? `Last update: ${createdAt}` : `Merged by: ${createdAt}`}
+        {isMerged ? `Merged · ${createdAt}` : `Created ${createdAt}`}
       </p>
     </a>
   )

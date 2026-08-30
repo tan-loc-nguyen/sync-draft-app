@@ -13,12 +13,14 @@ import useProfile from '@/hook/useProfile';
 import useDocument from '@/hook/useDocument';
 import { Document } from '@/types/document';
 import { toTime } from '@/lib/utils';
+import { useToast } from '@/components/Toast';
 
 export default function Home() {
   const navigate = useNavigate();
   const { logout } = useAuth();
   const { createDocument, getDocuments, deleteDocumentById, documentErr, loading } = useDocument();
   const { createUserProfile, getUserProfile, noProfile } = useProfile();
+  const { notify, toastElement } = useToast();
 
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [whose, setWhose] = useState<string>('mine');
@@ -57,13 +59,12 @@ export default function Home() {
 
   const createNewDocument = async () => {
     const newDoc = await createDocument();
-    if (documentErr || !newDoc || !newDoc._id) {
-      alert(`Error: ${documentErr}`)
+    if (documentErr || !newDoc || !newDoc.id) {
+      notify(`Could not create the document: ${documentErr}`, 'error')
       return;
     }
-    alert('Created a new document');
     setReload(!reload);
-    navigate(`/document/${newDoc._id}`)
+    navigate(`/document/${newDoc.id}`)
   }
 
   const handleDeleteDoc = async (docId: string) => {
@@ -79,6 +80,7 @@ export default function Home() {
 
   return (
     <div className='container h-screen p-4 flex flex-col justify-start items-start'>
+      {toastElement}
       <div className='w-full flex flex-row justify-between items-center'>
         <Logo />
         <Button onClick={handleLogout}>
@@ -123,16 +125,16 @@ export default function Home() {
                 <ScrollArea className="h-[60vh]">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {filterDocuments(docs).map((doc: Document) => (
-                      <Card key={doc._id}>
+                      <Card key={doc.id}>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                          <Link to={`/document/${doc._id}`}>
+                          <Link to={`/document/${doc.id}`}>
                           <CardTitle className="text-sm font-medium hover:underline">
                               {doc.title? doc.title : 'Untitled'}
                           </CardTitle>
                           </Link>
                           <span className="w-10 flex flex-row items-center justify-between space-y-0 pb-2">
                             <FileText className="h-4 w-4 text-muted-foreground"/>
-                            <Trash2Icon className="h-4 w-4 text-muted-foreground hover:text-black hover:cursor-pointer" onClick={() => handleDeleteDoc(doc._id as string)}/>
+                            <Trash2Icon className="h-4 w-4 text-muted-foreground hover:text-black hover:cursor-pointer" onClick={() => handleDeleteDoc(doc.id as string)}/>
                           </span>
                         </CardHeader>
                         <CardContent>
@@ -147,8 +149,8 @@ export default function Home() {
                 <ScrollArea className="h-[60vh]">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {filterDocuments(docs).map((doc: Document) => (
-                      <Link to={`/document/${doc._id}`}>
-                        <Card key={doc._id} className='hover:bg-gray-200'>
+                      <Link key={doc.id} to={`/document/${doc.id}`}>
+                        <Card className='hover:bg-gray-200'>
                           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">
                                 {doc.title? doc.title : 'Untitled'}

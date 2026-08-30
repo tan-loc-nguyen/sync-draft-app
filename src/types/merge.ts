@@ -1,9 +1,9 @@
 export interface Merge {
-  _id?: string,
-  docId: string,
-  mergedBy: string,
-  before: string,
-  after: string,
-  mergedAt?: Date,
-  description: string,
+  id: string,
+  documentId: string,
+  mergedById: string,
+  before: string | null,
+  after: string | null,
+  mergedAt: Date,
+  description: string | null
 }

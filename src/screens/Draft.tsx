@@ -1,163 +1,178 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { SaveIcon } from 'lucide-react';
+import * as A from '@automerge/automerge';
 
 import { DocumentIcon, HomeIcon } from '@/assets/icons';
 import TitleInput from '@/components/TitleInput';
 import Editor from '@/components/Editor';
 import DraftItem from '@/components/DraftItem';
 import { Button } from '@/components/ui/button';
-import { SaveIcon } from 'lucide-react';
 import useAuth from '@/hook/useAuth';
 import { IDraft, useLocalDB } from '@/hook/useLocalDB';
-import { toTime } from '@/lib/utils';
+import { applyContentUpdate, SyncDoc } from '@/lib/automerge-doc';
+import { useToast } from '@/components/Toast';
 
 const Draft = () => {
   const { docId, draftId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { updateDraftTitle, openIndexedDB, updateDraft, getDraftById, getDraftsByDocId } = useLocalDB();
+  const userId = user?.sub;
+  const { updateDraftTitle, openIndexedDB, saveDraftDoc, getDraftById, getDraftsByDocId } =
+    useLocalDB();
+
+  const { notify, toastElement } = useToast();
 
   const [draftTitle, setDraftTitle] = useState<string>('Untitled');
-  const [content, setContent] = useState<string | null>();
-  const [drafts, setDrafts] = useState<IDraft[]>()
+  // The draft's own Automerge document, held in a ref. An Automerge document
+  // becomes outdated the moment it is changed, so it must never be advanced
+  // inside a setState updater: React may call an updater more than once with
+  // the same input, and the second call would throw.
+  const docRef = useRef<A.Doc<SyncDoc> | null>(null);
+  // Snapshot used to seed the editor; local keystrokes deliberately do not
+  // feed back into it, or the editor would fight the caret.
+  const [initialContent, setInitialContent] = useState<string>('');
+  const [ready, setReady] = useState(false);
+  const [drafts, setDrafts] = useState<IDraft[]>([]);
+  const [dirty, setDirty] = useState(false);
 
-  useEffect(() => {
-    const fetchDraft = async () => {
-      if (!user?.sub) {
-        alert('Failed to update draft title! Please try again later...');
-        return;
-      }
-  
-      const db = await openIndexedDB(user.sub);
-      if (!db || !draftId) {
-        alert('Failed to update draft title! Please try again later...');
-        return;
-      }
-      const draft = await getDraftById(db, draftId);
-      setDraftTitle(draft?.title || 'Untitled');
-      setContent(draft?.content);
+  const load = useCallback(async () => {
+    if (!userId || !draftId || !docId) return;
+
+    const db = await openIndexedDB(userId);
+    if (!db) {
+      notify('Could not open your local drafts.', 'error');
+      return;
     }
 
-    fetchDraft();
-  }, [])
+    const draft = await getDraftById(db, draftId);
 
-  useEffect(() => {
-    const fetchDraft = async () => {
-      if (!user?.sub) {
-        alert('Failed to update draft title! Please try again later...');
-        return;
-      }
-  
-      const db = await openIndexedDB(user.sub);
-      if (!db || !draftId || !docId) {
-        alert('Failed to update draft title! Please try again later...');
-        return;
-      }
-      const draftList = await getDraftsByDocId(db, docId);
-      setDrafts(draftList);
+    if (!draft) {
+      notify('That draft no longer exists.', 'error');
+      navigate(`/document/${docId}`);
+      return;
     }
 
-    fetchDraft();
-  }, [])
+    setDraftTitle(draft.title || 'Untitled');
+    docRef.current = A.load<SyncDoc>(draft.doc);
+    setInitialContent(docRef.current.content ?? '');
+    setReady(true);
+    setDrafts(await getDraftsByDocId(db, docId));
+  }, [userId, draftId, docId, navigate]);
+
+  useEffect(() => {
+    // load() sets state only after awaiting IndexedDB: ordinary async loading,
+    // not the synchronous cascade this rule guards against.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
 
   const handleEditorChange = (value: string) => {
-    console.log(value)
-    setContent(value);
+    const current = docRef.current;
+    if (!current) return;
+
+    const next = applyContentUpdate(current, value);
+    if (next === current) return;
+
+    docRef.current = next;
+    setDirty(true);
   };
 
   const handleTitleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setDraftTitle(event.target.value);
-  }
+  };
 
   const changeTitle = async (event: React.FocusEvent<HTMLInputElement, Element>) => {
     event.preventDefault();
-    if (!draftId || !user?.sub) {
-      alert('Failed to update draft title! Please try again later...');
-      return;
+    if (!draftId || !userId) return;
+
+    const db = await openIndexedDB(userId);
+    if (!db) return;
+
+    try {
+      await updateDraftTitle(db, draftId, draftTitle);
+    } catch (error) {
+      console.error(error);
+      notify('Could not rename the draft.', 'error');
     }
-
-    const db = await openIndexedDB(user.sub);
-
-    if (!db) {
-      alert('Failed to create new draft! Please try again later...');
-      return;
-    }
-
-    await updateDraftTitle(db, draftId, draftTitle);
-  }
+  };
 
   const handleSaveDraft = async () => {
-    if (!user?.sub) {
-      alert('Failed to update draft title! Please try again later...');
+    if (!userId || !draftId || !docRef.current) return;
+
+    const db = await openIndexedDB(userId);
+    if (!db) {
+      notify('Could not open your local drafts.', 'error');
       return;
     }
 
-    const db = await openIndexedDB(user.sub);
-
-    if (!db || !draftId) {
-      alert('Failed to create new draft! Please try again later...');
-      return;
+    try {
+      await saveDraftDoc(db, draftId, docRef.current);
+      setDirty(false);
+      notify('Draft saved');
+    } catch (error) {
+      console.error(error);
+      notify('Could not save the draft.', 'error');
     }
-
-    await updateDraft(db, draftId, content || '');
-    alert('Saved!');
-  }
-
-  const handleReturnToMain = () => {
-    navigate(`/document/${docId}`);
-    window.location.reload();
-  }
+  };
 
   return (
     <div className='container h-screen flex flex-row'>
-      {/*Right section*/}
+      {toastElement}
       <div className='w-4/5 h-full p-4 flex flex-col justify-start'>
         <div className='w-full h-[60px] flex flex-row justify-between items-center'>
-          {/*Home + Title*/}
           <div className='w-4/5 h-[48px] flex flex-row justify-start items-center'>
-            <Button variant="ghost" size="lg">
-              <HomeIcon/>
-              <a href='/document'>Home</a>
+            <a href='/document'>
+              <Button variant='ghost' size='lg'>
+                <HomeIcon />
+                Home
+              </Button>
+            </a>
+            <TitleInput value={draftTitle} onChange={handleTitleChange} onBlur={changeTitle} />
+          </div>
+          <div className='w-1/5 h-[60px] flex flex-row-reverse items-center gap-3'>
+            <Button size='lg' onClick={handleSaveDraft} disabled={!ready}>
+              <SaveIcon />
+              Save
             </Button>
-            <TitleInput value={draftTitle} onChange={handleTitleChange} onBlur={changeTitle}/>
-          </div>
-          <div className='w-1/5 h-[60px] flex flex-row-reverse justify-start items-center overflow-auto'>
-          <Button size="lg" onClick={handleSaveDraft}>
-            <SaveIcon />
-            Save
-          </Button>
+            {dirty && <span className='text-sm text-gray-500'>Unsaved</span>}
           </div>
         </div>
 
-        {/*Editor*/}
-        <Editor onChange={handleEditorChange} content={content}/>
+        <p className='text-sm text-gray-500'>
+          This draft is private to your browser until you merge it into the document.
+        </p>
+
+        <Editor onChange={handleEditorChange} content={initialContent} />
       </div>
-      <aside/>
-        {/*Left sidebar section*/}
-      <div className='w-1/5 h-full p-4 bg-gray-100 flex flex-col justify-start'>
-        <div className='grow-0 w-full h-[168px] flex flex-col justify-between items-center'>
-          <Button className='w-full' variant="outline" size="lg" onClick={handleReturnToMain}>
-              <DocumentIcon />
-              Return to Main
-          </Button>
-        </div>
 
-        <div className='grow-0 w-full h-[28px] mt-4 text-[20px] font-semibold'>Draft version</div>
+      <div className='w-1/5 h-full p-4 bg-gray-100 flex flex-col justify-start'>
+        <Button
+          className='w-full'
+          variant='outline'
+          size='lg'
+          onClick={() => navigate(`/document/${docId}`)}
+        >
+          <DocumentIcon />
+          Return to main
+        </Button>
+
+        <div className='grow-0 w-full h-[28px] mt-4 text-[20px] font-semibold'>Drafts</div>
         <div className='grow w-full mt-2 rounded-lg flex flex-col justify-start items-start overflow-auto'>
-          {drafts && drafts.map(draft => (
+          {drafts.map((draft) => (
             <DraftItem
+              key={draft.draftId}
               docId={docId as string}
               draftId={draft.draftId}
               title={draft.title || 'Untitled'}
-              isMerged={false}
-              createdAt={toTime(draft.createdAt.toString())}
-              content={draft.content}
-            />)
-          )}
+              isMerged={draft.isMerged}
+              createdAt={draft.createdAt}
+            />
+          ))}
         </div>
       </div>
     </div>
-  )
+  );
 };
 
 export default Draft;

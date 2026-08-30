@@ -1,12 +1,13 @@
 import { useAuth0 } from '@auth0/auth0-react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { getErrorMessage } from '@/lib/errors';
 
 const useAuth = () => {
   const { loginWithRedirect, logout, getAccessTokenSilently, user, isAuthenticated } = useAuth0();
   const [loading, setLoading] = useState<boolean>(false);
-  const [authErr, setAuthErr] = useState<any>(null);
+  const [authErr, setAuthErr] = useState<string | null>(null);
 
-  const getToken = async () => {
+  const getToken = useCallback(async () => {
     setLoading(true);
     setAuthErr(null);
 
@@ -14,29 +15,29 @@ const useAuth = () => {
       const token = await getAccessTokenSilently();
       // console.log(token);
       return token;
-    } catch (error: any) {
-      console.error(`Error occurs while getting token: ${error}`);
-      setAuthErr(error);
+    } catch (error) {
+      console.error(`Error occurs while getting token: ${getErrorMessage(error)}`);
+      setAuthErr(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
-  }
+  }, [getAccessTokenSilently]);
 
-  const login = async () => {
+  const login = useCallback(async () => {
     setLoading(true);
     setAuthErr(null);
 
     try {
       await loginWithRedirect();
-    } catch (error: any) {
-      console.error(`Error occurs while logging in: ${error}`);
-      setAuthErr(error);
+    } catch (error) {
+      console.error(`Error occurs while logging in: ${getErrorMessage(error)}`);
+      setAuthErr(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
-  }
+  }, [loginWithRedirect]);
 
-  const signup = async () => {
+  const signup = useCallback(async () => {
     setLoading(true);
     setAuthErr(null);
 
@@ -46,13 +47,13 @@ const useAuth = () => {
           screen_hint: 'signup'
         }
       });
-    } catch (error: any) {
-      console.error(`Error occurs while signing up: ${error}`);
-      setAuthErr(error);
+    } catch (error) {
+      console.error(`Error occurs while signing up: ${getErrorMessage(error)}`);
+      setAuthErr(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
-  }
+  }, [loginWithRedirect]);
 
   return {
     loading,
