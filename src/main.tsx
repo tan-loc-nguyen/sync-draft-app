@@ -4,6 +4,7 @@ import { RouterProvider } from "react-router-dom";
 import { Auth0Provider } from '@auth0/auth0-react';
 
 import router from './routes';
+import { resolveReturnTo } from './lib/return-to';
 
 import './index.css';
 
@@ -16,6 +17,11 @@ createRoot(document.getElementById('root')!).render(
         redirect_uri: import.meta.env.VITE_AUTH0_CALLBACK_URL,
         audience: import.meta.env.VITE_AUTH0_AUDIENCE,
         scope: "openid email profile"
+      }}
+      // Auth0 always returns to the single registered callback URL, so the page
+      // the user actually wanted is carried in appState and restored here.
+      onRedirectCallback={(appState) => {
+        router.navigate(resolveReturnTo(appState), { replace: true });
       }}
     >
       <RouterProvider router={router} />
