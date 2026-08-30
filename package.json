@@ -66,5 +66,8 @@
     "vite-tsconfig-paths": "^6",
     "vitest": "^4.1.11"
   },
-  "packageManager": "yarn@1.22.22"
+  "packageManager": "yarn@1.22.22",
+  "engines": {
+    "node": "22.x"
+  }
 }

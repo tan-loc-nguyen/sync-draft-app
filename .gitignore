@@ -29,3 +29,8 @@ dist-ssr
 
 # TypeScript incremental build artefacts
 *.tsbuildinfo
+.vercel
+.env*
+
+# Vercel
+.vercel
