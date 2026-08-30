@@ -175,9 +175,12 @@ const Editor: React.FC<EditorProps> = ({ onChange, content, editable = true }) =
   if (!editor) return null;
 
   return editable ? (
-    <div className='mt-6 flex flex-col'>
+    <div className='mt-4 flex flex-col flex-1 min-h-0'>
       <Toolbar editor={editor} />
-      <EditorContent editor={editor} className='border border-t-0 rounded-b-lg h-[720px] overflow-auto' />
+      <EditorContent
+        editor={editor}
+        className='flex-1 min-h-0 overflow-auto border border-t-0 rounded-b-lg'
+      />
     </div>
   ) : (
     <EditorContent editor={editor} className='w-full h-full overflow-auto' />

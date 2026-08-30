@@ -117,9 +117,9 @@ const Draft = () => {
   };
 
   return (
-    <div className='container h-screen flex flex-row'>
+    <div className='w-full h-screen flex flex-row overflow-hidden'>
       {toastElement}
-      <div className='w-4/5 h-full p-4 flex flex-col justify-start'>
+      <div className='flex-1 min-w-0 h-full p-4 flex flex-col justify-start'>
         <div className='w-full h-[60px] flex flex-row justify-between items-center'>
           <div className='w-4/5 h-[48px] flex flex-row justify-start items-center'>
             <a href='/document'>
@@ -146,7 +146,7 @@ const Draft = () => {
         <Editor onChange={handleEditorChange} content={initialContent} />
       </div>
 
-      <div className='w-1/5 h-full p-4 bg-gray-100 flex flex-col justify-start'>
+      <div className='w-72 shrink-0 h-full p-4 bg-gray-100 flex flex-col justify-start overflow-hidden'>
         <Button
           className='w-full'
           variant='outline'
@@ -157,8 +157,9 @@ const Draft = () => {
           Return to main
         </Button>
 
-        <div className='grow-0 w-full h-[28px] mt-4 text-[20px] font-semibold'>Drafts</div>
-        <div className='grow w-full mt-2 rounded-lg flex flex-col justify-start items-start overflow-auto'>
+        <div className='flex-1 min-h-0 w-full overflow-y-auto'>
+        <h2 className='w-full mt-4 mb-1 text-[20px] font-semibold'>Drafts</h2>
+        <div className='w-full rounded-lg flex flex-col justify-start items-start'>
           {drafts.map((draft) => (
             <DraftItem
               key={draft.draftId}
@@ -169,6 +170,7 @@ const Draft = () => {
               createdAt={draft.createdAt}
             />
           ))}
+        </div>
         </div>
       </div>
     </div>

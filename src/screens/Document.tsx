@@ -228,7 +228,7 @@ const Document = () => {
     .map((draft) => ({ value: draft.draftId, label: draft.title }));
 
   return (
-    <div className='container h-screen flex flex-row'>
+    <div className='w-full h-screen flex flex-row overflow-hidden'>
       {toastElement}
       {/* Past merge, shown read-only */}
       <Merge isOpen={mergeViewIsOpen} onRequestClose={() => setMergeViewIsOpen(false)}>
@@ -304,7 +304,7 @@ const Document = () => {
       </Merge>
 
       {/* Editor side */}
-      <div className='w-4/5 h-full p-4 flex flex-col justify-start'>
+      <div className='flex-1 min-w-0 h-full p-4 flex flex-col justify-start'>
         <div className='w-full h-[60px] flex flex-row justify-between items-center'>
           <div className='w-4/5 h-[48px] flex flex-row justify-start items-center'>
             <a href='/document'>
@@ -333,7 +333,7 @@ const Document = () => {
       </div>
 
       {/* Branching sidebar */}
-      <div className='w-1/5 h-full p-4 bg-gray-100 flex flex-col justify-start'>
+      <div className='w-72 shrink-0 h-full p-4 bg-gray-100 flex flex-col justify-start overflow-hidden'>
         <div className='grow-0 w-full flex flex-col gap-2 items-center'>
           <Button className='w-full' variant='outline' size='lg' onClick={handleShare}>
             <ShareIcon />
@@ -355,8 +355,11 @@ const Document = () => {
           </Button>
         </div>
 
-        <div className='grow-0 w-full h-[28px] mt-4 text-[20px] font-semibold'>Drafts</div>
-        <div className='grow w-full mt-2 rounded-lg flex flex-col justify-start items-start overflow-auto'>
+        {/* One scrolling region: the sections size to their content, so an
+            empty list does not leave a gap and a long list scrolls. */}
+        <div className='flex-1 min-h-0 w-full overflow-y-auto'>
+        <h2 className='w-full mt-4 mb-1 text-[20px] font-semibold'>Drafts</h2>
+        <div className='w-full rounded-lg flex flex-col justify-start items-start'>
           {drafts.length === 0 && <p className='text-sm text-gray-500'>No drafts yet.</p>}
           {drafts.map((draft) => (
             <DraftItem
@@ -370,15 +373,16 @@ const Document = () => {
           ))}
         </div>
 
-        <div className='grow-0 w-full h-[28px] mt-4 text-[20px] font-semibold flex items-center gap-2'>
+        <h2 className='w-full mt-4 mb-1 text-[20px] font-semibold flex items-center gap-2'>
           <DocumentIcon />
-          Recent merges
-        </div>
-        <div className='grow w-full mt-2 rounded-lg flex flex-col justify-start items-start overflow-auto'>
+          <span>Recent merges</span>
+        </h2>
+        <div className='w-full rounded-lg flex flex-col justify-start items-start'>
           {merges.length === 0 && <p className='text-sm text-gray-500'>No merges yet.</p>}
           {merges.map((merge) => (
             <MergeItem key={merge.id} merge={merge} onSelect={openMergeView} />
           ))}
+        </div>
         </div>
       </div>
     </div>

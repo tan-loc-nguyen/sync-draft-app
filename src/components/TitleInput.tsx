@@ -11,7 +11,7 @@ const TitleInput: React.FC<TitleInputProps> = ({ onChange, onBlur, value}) => {
     <input
       type="text"
       placeholder={'Untitled document'}
-      className="w-fit min-w-[400px] h-[48px] ml-4 p-2 bg-white box-border rounded-lg outline-hidden text-2xl truncate font-semibold hover:border-2"
+      className="flex-1 min-w-0 h-[48px] ml-4 p-2 bg-white box-border rounded-lg outline-hidden text-2xl truncate font-semibold hover:border-2"
       value={value}
       onChange={onChange}
       onBlur={onBlur}
