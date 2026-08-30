@@ -41,6 +41,10 @@ const Document = () => {
   const userId = user?.sub;
   const { openIndexedDB, createDraft, getDraftById, getDraftsByDocId, markDraftMerged } = useLocalDB();
 
+  // Set once the document has been fetched, which is also what records the
+  // share for someone who arrived via a link.
+  const [accessConfirmed, setAccessConfirmed] = useState(false);
+
   // Live document state comes from the CRDT sync hook, not from local state.
   const {
     content,
@@ -51,9 +55,10 @@ const Document = () => {
     snapshot,
     currentContent,
     mergeBranch,
-  } = useDocumentSync(docId);
+  } = useDocumentSync(docId, accessConfirmed);
 
   const { notify, toastElement } = useToast();
+
 
   const [docTitle, setDocTitle] = useState<string>('Untitled');
   const [drafts, setDrafts] = useState<IDraft[]>([]);
@@ -97,6 +102,7 @@ const Document = () => {
 
       if (doc) {
         setDocTitle(doc.title);
+        setAccessConfirmed(true);
       } else {
         notify('This document has been deleted by its owner.', 'error');
         navigate('/document');

@@ -37,7 +37,16 @@ interface UseDocumentSync {
  * every message, and re-rendering the editor for each one would fight the
  * cursor. Only the rendered content and presence list drive React.
  */
-export const useDocumentSync = (docId: string | undefined): UseDocumentSync => {
+export const useDocumentSync = (
+  docId: string | undefined,
+  /**
+   * Hold off until the document has been fetched over REST. That fetch is what
+   * records the share for someone arriving on a link, and the socket refuses to
+   * join a document the user has no access to — connecting first would race it
+   * and refuse a perfectly valid link.
+   */
+  enabled: boolean = true
+): UseDocumentSync => {
   const socketUri = import.meta.env.VITE_SOCKET_ENDPOINT || 'http://localhost:3030';
   const { getToken, isAuthenticated } = useAuth();
 
@@ -72,7 +81,7 @@ export const useDocumentSync = (docId: string | undefined): UseDocumentSync => {
   }, []);
 
   useEffect(() => {
-    if (!docId || !isAuthenticated) return;
+    if (!docId || !isAuthenticated || !enabled) return;
 
     let disposed = false;
     let socket: Socket | undefined;
@@ -146,7 +155,7 @@ export const useDocumentSync = (docId: string | undefined): UseDocumentSync => {
       socketRef.current = null;
       setConnected(false);
     };
-  }, [docId, isAuthenticated, socketUri, flush]);
+  }, [docId, isAuthenticated, enabled, socketUri, flush]);
 
   const publish = useCallback(
     (html: string) => {
